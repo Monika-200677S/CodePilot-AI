@@ -2,7 +2,7 @@
 // api.js — shared fetch helper + auth/session utilities
 // ============================================================
 
-const API_BASE = "http://localhost:8080/api";
+const API_BASE = window.location.origin + "/api";
 
 function getToken() {
     return localStorage.getItem("cm_token");
