@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin · CodePilot AI</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="brand"><span class="dot"></span> codepilot-ai</div>
+
+        <nav>
+            <a class="nav-link" data-page="dashboard" href="dashboard.html"><span class="icon">▤</span> Dashboard</a>
+            <a class="nav-link" data-page="practice" href="questions.html"><span class="icon">◆</span> Practice Questions</a>
+            <a class="nav-link" data-page="companies" href="companies.html"><span class="icon">⌘</span> Companies</a>
+            <a class="nav-link" data-page="mentor" href="mentor.html"><span class="icon">✦</span> AI Interviewer</a>
+            <a class="nav-link" data-page="resume" href="resume.html"><span class="icon">▦</span> Resume Analyzer</a>
+            <a class="nav-link" data-page="mock" href="mock-interview.html"><span class="icon">⏱</span> Mock Interview</a>
+            <a class="nav-link" data-page="admin" href="admin.html" id="adminNavLink" style="display:none;"><span class="icon">⚙</span> Admin</a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-chip" id="userChip"></div>
+            <div class="logout-link" onclick="logout()">→ log out</div>
+        </div>
+    </aside>
+
+    <main class="main">
+        <div class="page-header">
+            <div class="eyebrow prompt">admin --panel</div>
+            <h1>Admin Panel</h1>
+            <p>Manage the question bank and view registered students.</p>
+        </div>
+
+        <div id="notAdminNotice" style="display:none;" class="empty-state">
+            You need an ADMIN account to view this page.<br><br>
+            A default admin account is created automatically on first run:<br>
+            <code class="mono">admin@codepilot.ai / Admin@123</code><br><br>
+            To promote another account instead, run:<br>
+            <code class="mono">UPDATE users SET role='ADMIN' WHERE email='your@email.com';</code>
+        </div>
+
+        <div id="adminContent" style="display:none;">
+            <div class="tab-row">
+                <button class="tab-btn active" data-tab="questions" onclick="switchTab('questions')">Questions</button>
+                <button class="tab-btn" data-tab="users" onclick="switchTab('users')">Users</button>
+            </div>
+
+            <div id="questionsTab">
+                <div class="detail-block">
+                    <h3 id="formTitle">Add a new question</h3>
+                    <input type="hidden" id="editingId">
+                    <div class="field"><label>title</label><input type="text" id="fTitle"></div>
+                    <div class="field"><label>description</label><textarea id="fDescription" rows="3"></textarea></div>
+                    <div class="field"><label>examples</label><textarea id="fExamples" rows="2"></textarea></div>
+                    <div class="field"><label>constraints</label><input type="text" id="fConstraints"></div>
+                    <div style="display:flex; gap:12px;">
+                        <div class="field" style="flex:1;"><label>topic</label><input type="text" id="fTopic" placeholder="Arrays"></div>
+                        <div class="field" style="flex:1;">
+                            <label>difficulty</label>
+                            <select id="fDifficulty"><option>Easy</option><option>Medium</option><option>Hard</option></select>
+                        </div>
+                    </div>
+                    <div class="field"><label>companies (comma-separated)</label><input type="text" id="fCompanies" placeholder="Amazon,Google"></div>
+                    <div class="field"><label>link</label><input type="text" id="fLink" placeholder="https://leetcode.com/..."></div>
+                    <div style="display:flex; gap:10px;">
+                        <button class="btn btn-primary" style="width:auto;" onclick="saveQuestion()" id="saveBtn">Add Question</button>
+                        <button class="btn btn-secondary" style="width:auto;" onclick="resetForm()">Clear</button>
+                    </div>
+                </div>
+
+                <div class="section-title">All questions (<span id="qCount">0</span>)</div>
+                <table class="admin-table">
+                    <thead><tr><th>Title</th><th>Topic</th><th>Difficulty</th><th></th></tr></thead>
+                    <tbody id="questionsTableBody"></tbody>
+                </table>
+            </div>
+
+            <div id="usersTab" style="display:none;">
+                <div class="section-title">Registered users</div>
+                <table class="admin-table">
+                    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Joined</th></tr></thead>
+                    <tbody id="usersTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+    requireAuth();
+    renderUserChip("userChip", "admin");
+
+    const session = getSession();
+    let allQuestions = [];
+
+    if (!session || session.role !== "ADMIN") {
+        document.getElementById("notAdminNotice").style.display = "block";
+    } else {
+        document.getElementById("adminContent").style.display = "block";
+        loadQuestions();
+        loadUsers();
+    }
+
+    function switchTab(tab) {
+        document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+        document.getElementById("questionsTab").style.display = tab === "questions" ? "block" : "none";
+        document.getElementById("usersTab").style.display = tab === "users" ? "block" : "none";
+    }
+
+    async function loadQuestions() {
+        try {
+            allQuestions = await apiFetch("/questions/all");
+            document.getElementById("qCount").textContent = allQuestions.length;
+            document.getElementById("questionsTableBody").innerHTML = allQuestions.map(q => `
+                <tr>
+                    <td>${q.title}</td>
+                    <td>${q.topic || ""}</td>
+                    <td>${q.difficulty || ""}</td>
+                    <td>
+                        <button class="btn btn-secondary btn-sm" onclick="editQuestion(${q.id})">Edit</button>
+                        <button class="btn btn-secondary btn-sm" onclick="deleteQuestion(${q.id})">Delete</button>
+                    </td>
+                </tr>
+            `).join("");
+        } catch (err) {
+            alert(err.message);
+        }
+    }
+
+    async function loadUsers() {
+        try {
+            const users = await apiFetch("/admin/users");
+            document.getElementById("usersTableBody").innerHTML = users.map(u => `
+                <tr>
+                    <td>${u.name}</td>
+                    <td>${u.email}</td>
+                    <td><span class="role-badge ${u.role === 'ADMIN' ? 'admin' : ''}">${u.role}</span></td>
+                    <td>${new Date(u.createdAt).toLocaleDateString()}</td>
+                </tr>
+            `).join("");
+        } catch (err) {
+            alert(err.message);
+        }
+    }
+
+    function editQuestion(id) {
+        const q = allQuestions.find(x => x.id === id);
+        if (!q) return;
+        document.getElementById("editingId").value = q.id;
+        document.getElementById("fTitle").value = q.title || "";
+        document.getElementById("fDescription").value = q.description || "";
+        document.getElementById("fExamples").value = q.examples || "";
+        document.getElementById("fConstraints").value = q.constraints || "";
+        document.getElementById("fTopic").value = q.topic || "";
+        document.getElementById("fDifficulty").value = q.difficulty || "Easy";
+        document.getElementById("fCompanies").value = q.companies || "";
+        document.getElementById("fLink").value = q.link || "";
+        document.getElementById("formTitle").textContent = "Edit question #" + q.id;
+        document.getElementById("saveBtn").textContent = "Update Question";
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    function resetForm() {
+        document.getElementById("editingId").value = "";
+        ["fTitle","fDescription","fExamples","fConstraints","fTopic","fCompanies","fLink"].forEach(id => document.getElementById(id).value = "");
+        document.getElementById("fDifficulty").value = "Easy";
+        document.getElementById("formTitle").textContent = "Add a new question";
+        document.getElementById("saveBtn").textContent = "Add Question";
+    }
+
+    async function saveQuestion() {
+        const id = document.getElementById("editingId").value;
+        const payload = {
+            title: document.getElementById("fTitle").value,
+            description: document.getElementById("fDescription").value,
+            examples: document.getElementById("fExamples").value,
+            constraints: document.getElementById("fConstraints").value,
+            topic: document.getElementById("fTopic").value,
+            difficulty: document.getElementById("fDifficulty").value,
+            companies: document.getElementById("fCompanies").value,
+            link: document.getElementById("fLink").value
+        };
+
+        if (!payload.title.trim()) { alert("Title is required."); return; }
+
+        try {
+            if (id) {
+                await apiFetch(`/questions/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+            } else {
+                await apiFetch("/questions/add", { method: "POST", body: JSON.stringify(payload) });
+            }
+            resetForm();
+            loadQuestions();
+        } catch (err) {
+            alert(err.message);
+        }
+    }
+
+    async function deleteQuestion(id) {
+        if (!confirm("Delete this question? This can't be undone.")) return;
+        try {
+            await apiFetch(`/questions/${id}`, { method: "DELETE" });
+            loadQuestions();
+        } catch (err) {
+            alert(err.message);
+        }
+    }
+</script>
+
+</body>
+</html>

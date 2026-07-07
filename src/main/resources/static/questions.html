@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Practice Questions · CodePilot AI</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="brand"><span class="dot"></span> codepilot-ai</div>
+
+        <nav>
+            <a class="nav-link" data-page="dashboard" href="dashboard.html"><span class="icon">▤</span> Dashboard</a>
+            <a class="nav-link" data-page="practice" href="questions.html"><span class="icon">◆</span> Practice Questions</a>
+            <a class="nav-link" data-page="companies" href="companies.html"><span class="icon">⌘</span> Companies</a>
+            <a class="nav-link" data-page="mentor" href="mentor.html"><span class="icon">✦</span> AI Interviewer</a>
+            <a class="nav-link" data-page="resume" href="resume.html"><span class="icon">▦</span> Resume Analyzer</a>
+            <a class="nav-link" data-page="mock" href="mock-interview.html"><span class="icon">⏱</span> Mock Interview</a>
+            <a class="nav-link" data-page="admin" href="admin.html" id="adminNavLink" style="display:none;"><span class="icon">⚙</span> Admin</a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-chip" id="userChip"></div>
+            <div class="logout-link" onclick="logout()">→ log out</div>
+        </div>
+    </aside>
+
+    <main class="main">
+        <div class="page-header">
+            <div class="eyebrow prompt">questions --list</div>
+            <h1>Practice Questions</h1>
+            <p>Click a question to read the full problem, draft a solution, and track it on your dashboard.</p>
+        </div>
+
+        <div class="search-row">
+            <input type="text" id="searchInput" placeholder="Search questions by title...">
+        </div>
+
+        <div class="filter-row" id="topicFilters">
+            <div class="chip active" data-topic="all">All topics</div>
+            <div class="chip" data-topic="Arrays">Arrays</div>
+            <div class="chip" data-topic="Strings">Strings</div>
+            <div class="chip" data-topic="Linked List">Linked List</div>
+            <div class="chip" data-topic="Trees">Trees</div>
+            <div class="chip" data-topic="Graphs">Graphs</div>
+            <div class="chip" data-topic="DP">DP</div>
+            <div class="chip" data-topic="Stack">Stack</div>
+            <div class="chip" data-topic="Heap">Heap</div>
+            <div class="chip" data-topic="Searching">Searching</div>
+            <div class="chip" data-topic="Bit Manipulation">Bit Manipulation</div>
+        </div>
+
+        <div class="filter-row" id="difficultyFilters">
+            <div class="chip active" data-difficulty="all">Any difficulty</div>
+            <div class="chip" data-difficulty="Easy">Easy</div>
+            <div class="chip" data-difficulty="Medium">Medium</div>
+            <div class="chip" data-difficulty="Hard">Hard</div>
+        </div>
+
+        <div class="question-list" id="questionList">
+            <div class="empty-state">Loading questions...</div>
+        </div>
+    </main>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+    requireAuth();
+    renderUserChip("userChip", "practice");
+
+    let allQuestions = [];
+    let bookmarkedIds = new Set();
+    let activeTopic = "all";
+    let activeDifficulty = "all";
+    let searchTerm = "";
+
+    function difficultyClass(d) {
+        if (!d) return "";
+        const v = d.toLowerCase();
+        if (v.includes("easy")) return "easy";
+        if (v.includes("hard")) return "hard";
+        return "medium";
+    }
+
+    function renderQuestions() {
+        const list = document.getElementById("questionList");
+        let filtered = allQuestions;
+
+        if (activeTopic !== "all") {
+            filtered = filtered.filter(q => (q.topic || "").toLowerCase() === activeTopic.toLowerCase());
+        }
+        if (activeDifficulty !== "all") {
+            filtered = filtered.filter(q => (q.difficulty || "").toLowerCase() === activeDifficulty.toLowerCase());
+        }
+        if (searchTerm.trim()) {
+            filtered = filtered.filter(q => q.title.toLowerCase().includes(searchTerm.trim().toLowerCase()));
+        }
+
+        if (filtered.length === 0) {
+            list.innerHTML = `<div class="empty-state">No questions match these filters. Try clearing a filter, or ask the AI mentor for a question.</div>`;
+            return;
+        }
+
+        list.innerHTML = filtered.map(q => `
+            <div class="question-card" onclick="openQuestion(${q.id})">
+                <div>
+                    <div class="qtitle">${q.title}</div>
+                    <div class="qmeta">
+                        <span class="tag">${q.topic || "General"}</span>
+                        <span class="tag ${difficultyClass(q.difficulty)}">${q.difficulty || "N/A"}</span>
+                    </div>
+                </div>
+                <button class="icon-btn ${bookmarkedIds.has(q.id) ? 'saved' : ''}" title="Bookmark" onclick="event.stopPropagation(); toggleBookmark(${q.id}, this)">★</button>
+            </div>
+        `).join("");
+    }
+
+    function openQuestion(id) {
+        window.location.href = `question.html?id=${id}`;
+    }
+
+    async function loadQuestions() {
+        try {
+            allQuestions = await apiFetch("/questions/all");
+            renderQuestions();
+        } catch (err) {
+            document.getElementById("questionList").innerHTML =
+                `<div class="empty-state">Could not load questions: ${err.message}</div>`;
+        }
+    }
+
+    async function loadBookmarks() {
+        try {
+            const bookmarks = await apiFetch("/bookmarks");
+            bookmarkedIds = new Set(bookmarks.map(b => b.question.id));
+            renderQuestions();
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    async function toggleBookmark(questionId, btn) {
+        try {
+            if (bookmarkedIds.has(questionId)) {
+                await apiFetch(`/bookmarks/${questionId}`, { method: "DELETE" });
+                bookmarkedIds.delete(questionId);
+                btn.classList.remove("saved");
+            } else {
+                await apiFetch("/bookmarks", {
+                    method: "POST",
+                    body: JSON.stringify({ questionId })
+                });
+                bookmarkedIds.add(questionId);
+                btn.classList.add("saved");
+            }
+        } catch (err) {
+            alert(err.message);
+        }
+    }
+
+    document.getElementById("topicFilters").addEventListener("click", (e) => {
+        const chip = e.target.closest(".chip");
+        if (!chip) return;
+        document.querySelectorAll("#topicFilters .chip").forEach(c => c.classList.remove("active"));
+        chip.classList.add("active");
+        activeTopic = chip.dataset.topic;
+        renderQuestions();
+    });
+
+    document.getElementById("difficultyFilters").addEventListener("click", (e) => {
+        const chip = e.target.closest(".chip");
+        if (!chip) return;
+        document.querySelectorAll("#difficultyFilters .chip").forEach(c => c.classList.remove("active"));
+        chip.classList.add("active");
+        activeDifficulty = chip.dataset.difficulty;
+        renderQuestions();
+    });
+
+    document.getElementById("searchInput").addEventListener("input", (e) => {
+        searchTerm = e.target.value;
+        renderQuestions();
+    });
+
+    loadQuestions().then(loadBookmarks);
+</script>
+
+</body>
+</html>

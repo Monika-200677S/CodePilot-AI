@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mock Interview · CodePilot AI</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="brand"><span class="dot"></span> codepilot-ai</div>
+
+        <nav>
+            <a class="nav-link" data-page="dashboard" href="dashboard.html"><span class="icon">▤</span> Dashboard</a>
+            <a class="nav-link" data-page="practice" href="questions.html"><span class="icon">◆</span> Practice Questions</a>
+            <a class="nav-link" data-page="companies" href="companies.html"><span class="icon">⌘</span> Companies</a>
+            <a class="nav-link" data-page="mentor" href="mentor.html"><span class="icon">✦</span> AI Interviewer</a>
+            <a class="nav-link" data-page="resume" href="resume.html"><span class="icon">▦</span> Resume Analyzer</a>
+            <a class="nav-link" data-page="mock" href="mock-interview.html"><span class="icon">⏱</span> Mock Interview</a>
+            <a class="nav-link" data-page="admin" href="admin.html" id="adminNavLink" style="display:none;"><span class="icon">⚙</span> Admin</a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-chip" id="userChip"></div>
+            <div class="logout-link" onclick="logout()">→ log out</div>
+        </div>
+    </aside>
+
+    <main class="main" style="max-width: 720px;">
+        <div class="page-header">
+            <div class="eyebrow prompt">interview --mock</div>
+            <h1>Mock Interview</h1>
+            <p>5 random questions, a countdown timer, and a score at the end — practice under pressure.</p>
+        </div>
+
+        <div id="setupScreen">
+            <div class="detail-block">
+                <h3>Settings</h3>
+                <div class="field">
+                    <label>time per question (minutes)</label>
+                    <select id="timePerQuestion">
+                        <option value="5">5</option>
+                        <option value="10" selected>10</option>
+                        <option value="15">15</option>
+                        <option value="20">20</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>difficulty mix</label>
+                    <select id="difficultyMix">
+                        <option value="all">Mixed (any difficulty)</option>
+                        <option value="Easy">Easy only</option>
+                        <option value="Medium">Medium only</option>
+                        <option value="Hard">Hard only</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" onclick="startInterview()">Start Mock Interview</button>
+            </div>
+        </div>
+
+        <div id="interviewScreen" style="display:none;">
+            <div class="mock-progress-dots" id="progressDots"></div>
+            <div class="timer-display" id="timerDisplay">10:00</div>
+
+            <div class="detail-block" style="margin-top:20px;">
+                <div class="qmeta" style="margin-bottom:10px;">
+                    <span class="tag" id="mqTopic"></span>
+                    <span class="tag" id="mqDifficulty"></span>
+                </div>
+                <h3 id="mqTitle" style="font-size:18px;"></h3>
+                <div class="body-text" id="mqDescription"></div>
+            </div>
+
+            <div class="result-row">
+                <button class="btn btn-solved" onclick="answerQuestion(true)">✓ I solved it</button>
+                <button class="btn btn-attempted" onclick="answerQuestion(false)">✗ Skip / couldn't solve</button>
+            </div>
+        </div>
+
+        <div id="resultsScreen" style="display:none;">
+            <div class="detail-block" style="text-align:center;">
+                <h3>Interview complete</h3>
+                <div class="value accent" style="font-size:40px; margin:12px 0;" id="finalScore"></div>
+                <p style="color:var(--text-muted);">questions solved out of total</p>
+                <div style="display:flex; gap:12px; justify-content:center; margin-top:16px;">
+                    <button class="btn btn-primary" style="width:auto;" onclick="location.reload()">Try Another Round</button>
+                    <a href="dashboard.html" class="btn btn-secondary" style="width:auto;">Back to Dashboard</a>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+    requireAuth();
+    renderUserChip("userChip", "mock");
+
+    let sessionQuestions = [];
+    let currentIndex = 0;
+    let solvedCount = 0;
+    let timerInterval = null;
+    let secondsLeft = 0;
+
+    function shuffle(arr) {
+        const a = arr.slice();
+        for (let i = a.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
+    }
+
+    async function startInterview() {
+        const minutes = Number(document.getElementById("timePerQuestion").value);
+        const difficulty = document.getElementById("difficultyMix").value;
+
+        try {
+            let all = await apiFetch("/questions/all");
+            if (difficulty !== "all") {
+                all = all.filter(q => (q.difficulty || "").toLowerCase() === difficulty.toLowerCase());
+            }
+            if (all.length === 0) {
+                alert("No questions available for that difficulty.");
+                return;
+            }
+
+            sessionQuestions = shuffle(all).slice(0, Math.min(5, all.length));
+            currentIndex = 0;
+            solvedCount = 0;
+            secondsLeft = minutes * 60;
+
+            document.getElementById("setupScreen").style.display = "none";
+            document.getElementById("interviewScreen").style.display = "block";
+            renderDots();
+            showQuestion();
+            startTimer();
+        } catch (err) {
+            alert(err.message);
+        }
+    }
+
+    function renderDots() {
+        const dots = document.getElementById("progressDots");
+        dots.innerHTML = sessionQuestions.map((_, i) => {
+            let cls = "dot-item";
+            if (i < currentIndex) cls += " done";
+            else if (i === currentIndex) cls += " current";
+            return `<div class="${cls}"></div>`;
+        }).join("");
+    }
+
+    function difficultyClass(d) {
+        if (!d) return "";
+        const v = d.toLowerCase();
+        if (v.includes("easy")) return "easy";
+        if (v.includes("hard")) return "hard";
+        return "medium";
+    }
+
+    function showQuestion() {
+        const q = sessionQuestions[currentIndex];
+        document.getElementById("mqTopic").textContent = q.topic || "General";
+        const diffEl = document.getElementById("mqDifficulty");
+        diffEl.textContent = q.difficulty || "N/A";
+        diffEl.className = "tag " + difficultyClass(q.difficulty);
+        document.getElementById("mqTitle").textContent = q.title;
+        document.getElementById("mqDescription").textContent = q.description;
+        renderDots();
+    }
+
+    function startTimer() {
+        const minutes = Number(document.getElementById("timePerQuestion").value);
+        secondsLeft = minutes * 60;
+        updateTimerDisplay();
+
+        clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+            secondsLeft--;
+            updateTimerDisplay();
+            if (secondsLeft <= 0) {
+                answerQuestion(false);
+            }
+        }, 1000);
+    }
+
+    function updateTimerDisplay() {
+        const m = Math.floor(secondsLeft / 60);
+        const s = secondsLeft % 60;
+        const el = document.getElementById("timerDisplay");
+        el.textContent = `${m}:${String(s).padStart(2, "0")}`;
+        el.classList.toggle("low-time", secondsLeft <= 30);
+    }
+
+    async function answerQuestion(solved) {
+        clearInterval(timerInterval);
+        const q = sessionQuestions[currentIndex];
+
+        if (solved) solvedCount++;
+
+        try {
+            await apiFetch("/progress/update", {
+                method: "POST",
+                body: JSON.stringify({ solvedCorrectly: solved, topic: q.topic, difficulty: q.difficulty })
+            });
+        } catch (err) {
+            console.error(err);
+        }
+
+        currentIndex++;
+        if (currentIndex >= sessionQuestions.length) {
+            finishInterview();
+        } else {
+            showQuestion();
+            startTimer();
+        }
+    }
+
+    function finishInterview() {
+        document.getElementById("interviewScreen").style.display = "none";
+        document.getElementById("resultsScreen").style.display = "block";
+        document.getElementById("finalScore").textContent = `${solvedCount} / ${sessionQuestions.length}`;
+    }
+</script>
+
+</body>
+</html>

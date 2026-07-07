@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard · CodePilot AI</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="brand"><span class="dot"></span> codepilot-ai</div>
+
+        <nav>
+            <a class="nav-link" data-page="dashboard" href="dashboard.html"><span class="icon">▤</span> Dashboard</a>
+            <a class="nav-link" data-page="practice" href="questions.html"><span class="icon">◆</span> Practice Questions</a>
+            <a class="nav-link" data-page="companies" href="companies.html"><span class="icon">⌘</span> Companies</a>
+            <a class="nav-link" data-page="mentor" href="mentor.html"><span class="icon">✦</span> AI Interviewer</a>
+            <a class="nav-link" data-page="resume" href="resume.html"><span class="icon">▦</span> Resume Analyzer</a>
+            <a class="nav-link" data-page="mock" href="mock-interview.html"><span class="icon">⏱</span> Mock Interview</a>
+            <a class="nav-link" data-page="admin" href="admin.html" id="adminNavLink" style="display:none;"><span class="icon">⚙</span> Admin</a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-chip" id="userChip"></div>
+            <div class="logout-link" onclick="logout()">→ log out</div>
+        </div>
+    </aside>
+
+    <main class="main">
+        <div class="page-header">
+            <div class="eyebrow prompt">analytics --student</div>
+            <h1>Your Dashboard</h1>
+            <p>Track solves, streaks, and your interview-readiness rating.</p>
+        </div>
+
+        <div class="stat-grid">
+            <div class="stat-card">
+                <div class="label">questions_solved</div>
+                <div class="value accent" id="statSolved">—</div>
+                <div class="sub" id="statAttempted"></div>
+            </div>
+            <div class="stat-card">
+                <div class="label">current_streak</div>
+                <div class="value warn" id="statStreak">—</div>
+                <div class="sub" id="statLongestStreak"></div>
+            </div>
+            <div class="stat-card">
+                <div class="label">contest_rating</div>
+                <div class="value" id="statRating">—</div>
+                <div class="sub">Gamified score — rises more for harder solves</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">weak_topic</div>
+                <div class="value danger" id="statWeak">—</div>
+                <div class="sub">Focus your next session here</div>
+            </div>
+        </div>
+
+        <div class="section-title">Solved by difficulty</div>
+        <div class="detail-block" style="display:flex; gap:28px; align-items:center; flex-wrap:wrap;">
+            <div class="donut" id="difficultyDonut"></div>
+            <div class="donut-legend">
+                <div class="row"><span class="swatch" style="background:var(--accent);"></span> Easy: <strong id="legendEasy">0</strong></div>
+                <div class="row"><span class="swatch" style="background:var(--amber);"></span> Medium: <strong id="legendMedium">0</strong></div>
+                <div class="row"><span class="swatch" style="background:var(--red);"></span> Hard: <strong id="legendHard">0</strong></div>
+            </div>
+        </div>
+
+        <div class="section-title">Activity heatmap (last 119 days)</div>
+        <div class="detail-block">
+            <div class="heatmap-grid" id="heatmapGrid"></div>
+            <div class="heatmap-legend">
+                <span>Less</span>
+                <div class="heatmap-cell"></div>
+                <div class="heatmap-cell" data-level="1"></div>
+                <div class="heatmap-cell" data-level="2"></div>
+                <div class="heatmap-cell" data-level="3"></div>
+                <span>More</span>
+            </div>
+        </div>
+
+        <div class="section-title">Quick actions</div>
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+            <a href="questions.html" class="btn btn-secondary" style="width:auto;">◆ Browse practice questions</a>
+            <a href="mock-interview.html" class="btn btn-secondary" style="width:auto;">⏱ Start a mock interview</a>
+            <a href="mentor.html" class="btn btn-secondary" style="width:auto;">✦ Ask the AI Interviewer</a>
+        </div>
+    </main>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+    requireAuth();
+    renderUserChip("userChip", "dashboard");
+
+    function renderDonut(easy, medium, hard) {
+        const total = easy + medium + hard;
+        const donut = document.getElementById("difficultyDonut");
+
+        if (total === 0) {
+            donut.style.background = "var(--surface-2)";
+            donut.innerHTML = `<div class="donut-center"><div class="num">0</div><div class="lbl">solved</div></div>`;
+            return;
+        }
+
+        const easyDeg = (easy / total) * 360;
+        const mediumDeg = (medium / total) * 360;
+        const hardDeg = (hard / total) * 360;
+
+        const gradient = `conic-gradient(
+            var(--accent) 0deg ${easyDeg}deg,
+            var(--amber) ${easyDeg}deg ${easyDeg + mediumDeg}deg,
+            var(--red) ${easyDeg + mediumDeg}deg ${easyDeg + mediumDeg + hardDeg}deg
+        )`;
+        donut.style.background = gradient;
+        donut.innerHTML = `<div class="donut-center"><div class="num">${total}</div><div class="lbl">solved</div></div>`;
+    }
+
+    function renderHeatmap(data) {
+        const grid = document.getElementById("heatmapGrid");
+        grid.innerHTML = "";
+        Object.entries(data).forEach(([date, count]) => {
+            const cell = document.createElement("div");
+            cell.className = "heatmap-cell";
+            let level = 0;
+            if (count >= 1 && count <= 1) level = 1;
+            else if (count >= 2 && count <= 3) level = 2;
+            else if (count >= 4) level = 3;
+            if (level > 0) cell.dataset.level = level;
+            cell.title = `${date}: ${count} solved`;
+            grid.appendChild(cell);
+        });
+    }
+
+    async function loadProgress() {
+        try {
+            const p = await apiFetch("/progress");
+            document.getElementById("statSolved").textContent = p.questionsSolved;
+            document.getElementById("statAttempted").textContent = p.questionsAttempted + " attempted";
+            document.getElementById("statStreak").textContent = p.currentStreak + " 🔥";
+            document.getElementById("statLongestStreak").textContent = "Longest: " + p.longestStreak + " days";
+            document.getElementById("statRating").textContent = p.contestRating;
+            document.getElementById("statWeak").textContent = p.weakTopic ? ("❌ " + p.weakTopic) : "None yet";
+
+            document.getElementById("legendEasy").textContent = p.easySolved;
+            document.getElementById("legendMedium").textContent = p.mediumSolved;
+            document.getElementById("legendHard").textContent = p.hardSolved;
+            renderDonut(p.easySolved, p.mediumSolved, p.hardSolved);
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    async function loadHeatmap() {
+        try {
+            const data = await apiFetch("/progress/heatmap?days=119");
+            renderHeatmap(data);
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    loadProgress();
+    loadHeatmap();
+</script>
+
+</body>
+</html>

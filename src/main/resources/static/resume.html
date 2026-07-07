@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Resume Analyzer · CodePilot AI</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="brand"><span class="dot"></span> codepilot-ai</div>
+
+        <nav>
+            <a class="nav-link" data-page="dashboard" href="dashboard.html"><span class="icon">▤</span> Dashboard</a>
+            <a class="nav-link" data-page="practice" href="questions.html"><span class="icon">◆</span> Practice Questions</a>
+            <a class="nav-link" data-page="companies" href="companies.html"><span class="icon">⌘</span> Companies</a>
+            <a class="nav-link" data-page="mentor" href="mentor.html"><span class="icon">✦</span> AI Interviewer</a>
+            <a class="nav-link" data-page="resume" href="resume.html"><span class="icon">▦</span> Resume Analyzer</a>
+            <a class="nav-link" data-page="mock" href="mock-interview.html"><span class="icon">⏱</span> Mock Interview</a>
+            <a class="nav-link" data-page="admin" href="admin.html" id="adminNavLink" style="display:none;"><span class="icon">⚙</span> Admin</a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-chip" id="userChip"></div>
+            <div class="logout-link" onclick="logout()">→ log out</div>
+        </div>
+    </aside>
+
+    <main class="main">
+        <div class="page-header">
+            <div class="eyebrow prompt">resume --analyze</div>
+            <h1>Resume Analyzer</h1>
+            <p>Upload a PDF resume to get an AI-generated ATS score, weak points, missing keywords, and detected skills.</p>
+        </div>
+
+        <div class="detail-block">
+            <input type="file" id="fileInput" accept="application/pdf" style="display:none;">
+            <div id="dropZone" style="border:1px dashed var(--border); border-radius:8px; padding:36px; text-align:center; cursor:pointer;" onclick="document.getElementById('fileInput').click()">
+                <div style="font-family:var(--font-mono); color:var(--text-muted); margin-bottom:8px;" id="dropZoneText">Click to choose a PDF resume, or drag one here</div>
+                <button class="btn btn-primary" style="width:auto; padding:10px 20px;">Choose File</button>
+            </div>
+            <div class="result-row">
+                <button class="btn btn-solved" id="analyzeBtn" style="width:auto;" onclick="analyzeResume()" disabled>Analyze Resume</button>
+            </div>
+        </div>
+
+        <div id="resultsSection" style="display:none;">
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <div class="label">ats_score</div>
+                    <div class="value accent" id="atsScore">—</div>
+                    <div class="progress-bar-track"><div class="progress-bar-fill" id="atsBar" style="width:0%"></div></div>
+                </div>
+            </div>
+
+            <div class="detail-block">
+                <h3>Weak points</h3>
+                <div class="body-text" id="weakPoints"></div>
+            </div>
+            <div class="detail-block">
+                <h3>Missing keywords</h3>
+                <div class="qmeta" id="missingKeywords"></div>
+            </div>
+            <div class="detail-block">
+                <h3>Detected skills</h3>
+                <div class="qmeta" id="detectedSkills"></div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+    requireAuth();
+    renderUserChip("userChip", "resume");
+
+    const fileInput = document.getElementById("fileInput");
+    const analyzeBtn = document.getElementById("analyzeBtn");
+    const dropZoneText = document.getElementById("dropZoneText");
+    let selectedFile = null;
+
+    fileInput.addEventListener("change", () => {
+        if (fileInput.files.length > 0) {
+            selectedFile = fileInput.files[0];
+            dropZoneText.textContent = "Selected: " + selectedFile.name;
+            analyzeBtn.disabled = false;
+        }
+    });
+
+    const dropZone = document.getElementById("dropZone");
+    dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.style.borderColor = "var(--accent)"; });
+    dropZone.addEventListener("dragleave", () => { dropZone.style.borderColor = "var(--border)"; });
+    dropZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropZone.style.borderColor = "var(--border)";
+        if (e.dataTransfer.files.length > 0) {
+            selectedFile = e.dataTransfer.files[0];
+            dropZoneText.textContent = "Selected: " + selectedFile.name;
+            analyzeBtn.disabled = false;
+        }
+    });
+
+    async function analyzeResume() {
+        if (!selectedFile) return;
+        analyzeBtn.disabled = true;
+        analyzeBtn.textContent = "Analyzing...";
+
+        try {
+            const formData = new FormData();
+            formData.append("file", selectedFile);
+
+            const response = await fetch(API_BASE + "/resume/analyze", {
+                method: "POST",
+                headers: { "Authorization": "Bearer " + getToken() },
+                body: formData
+            });
+
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(text || "Could not analyze resume.");
+            }
+
+            const data = await response.json();
+
+            document.getElementById("atsScore").textContent = data.atsScore + "/100";
+            document.getElementById("atsBar").style.width = Math.min(data.atsScore, 100) + "%";
+
+            document.getElementById("weakPoints").innerHTML = (data.weakPoints || [])
+                .map(p => `• ${p}`).join("<br>") || "None detected.";
+
+            document.getElementById("missingKeywords").innerHTML = (data.missingKeywords || [])
+                .map(k => `<span class="tag">${k}</span>`).join(" ") || "<span class='tag'>None</span>";
+
+            document.getElementById("detectedSkills").innerHTML = (data.skills || [])
+                .map(s => `<span class="tag easy">${s}</span>`).join(" ") || "<span class='tag'>None detected</span>";
+
+            document.getElementById("resultsSection").style.display = "block";
+        } catch (err) {
+            alert(err.message);
+        } finally {
+            analyzeBtn.disabled = false;
+            analyzeBtn.textContent = "Analyze Resume";
+        }
+    }
+</script>
+
+</body>
+</html>

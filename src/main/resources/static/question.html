@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Question · CodePilot AI</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="brand"><span class="dot"></span> codepilot-ai</div>
+
+        <nav>
+            <a class="nav-link" data-page="dashboard" href="dashboard.html"><span class="icon">▤</span> Dashboard</a>
+            <a class="nav-link" data-page="practice" href="questions.html"><span class="icon">◆</span> Practice Questions</a>
+            <a class="nav-link" data-page="companies" href="companies.html"><span class="icon">⌘</span> Companies</a>
+            <a class="nav-link" data-page="mentor" href="mentor.html"><span class="icon">✦</span> AI Interviewer</a>
+            <a class="nav-link" data-page="resume" href="resume.html"><span class="icon">▦</span> Resume Analyzer</a>
+            <a class="nav-link" data-page="mock" href="mock-interview.html"><span class="icon">⏱</span> Mock Interview</a>
+            <a class="nav-link" data-page="admin" href="admin.html" id="adminNavLink" style="display:none;"><span class="icon">⚙</span> Admin</a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-chip" id="userChip"></div>
+            <div class="logout-link" onclick="logout()">→ log out</div>
+        </div>
+    </aside>
+
+    <main class="main" id="mainContent" style="max-width: 820px;">
+        <div class="back-link" onclick="window.location.href='questions.html'">← back to all questions</div>
+
+        <div id="loadingState" class="empty-state">Loading question...</div>
+
+        <div id="questionContent" style="display:none;">
+            <div class="detail-header">
+                <div>
+                    <h1 id="qTitle"></h1>
+                    <div class="qmeta">
+                        <span class="tag" id="qTopic"></span>
+                        <span class="tag" id="qDifficulty"></span>
+                    </div>
+                </div>
+                <div class="detail-actions">
+                    <button class="icon-btn" id="bookmarkBtn" title="Bookmark" onclick="toggleBookmark()">★</button>
+                </div>
+            </div>
+
+            <div class="detail-block" style="margin-top:20px;">
+                <h3>Description</h3>
+                <div class="body-text" id="qDescription"></div>
+            </div>
+
+            <div class="detail-block">
+                <h3>Example</h3>
+                <pre id="qExamples"></pre>
+            </div>
+
+            <div class="detail-block" id="constraintsBlock">
+                <h3>Constraints</h3>
+                <div class="body-text" id="qConstraints"></div>
+            </div>
+
+            <div class="detail-block" id="companiesBlock" style="display:none;">
+                <h3>Asked by</h3>
+                <div class="qmeta" id="qCompanies"></div>
+            </div>
+
+            <div class="detail-block">
+                <h3>AI Hints — progressive, no full solution</h3>
+                <div class="hint-row">
+                    <button class="hint-btn" id="hintBtn1" onclick="revealHint(1)">Show Hint 1</button>
+                    <button class="hint-btn" id="hintBtn2" onclick="revealHint(2)" disabled>Show Hint 2</button>
+                    <button class="hint-btn" id="hintBtn3" onclick="revealHint(3)" disabled>Show Hint 3</button>
+                </div>
+                <div id="hintsContainer"></div>
+            </div>
+
+            <div class="detail-block">
+                <div class="editor-toolbar">
+                    <h3 style="margin:0;">Your solution (draft)</h3>
+                    <select id="languageSelect">
+                        <option>Java</option>
+                        <option>Python</option>
+                        <option>JavaScript</option>
+                        <option>C++</option>
+                    </select>
+                </div>
+                <textarea class="code-editor" id="codeEditor" placeholder="// Write your solution here. It's saved automatically as you type, just for this question." spellcheck="false"></textarea>
+
+                <div class="result-row">
+                    <button class="btn btn-solved" onclick="markProgress(true)">✓ Mark Solved</button>
+                    <button class="btn btn-attempted" onclick="markProgress(false)">✗ Mark Attempted (got it wrong)</button>
+                    <a class="btn btn-secondary" id="leetcodeLink" href="#" target="_blank" rel="noopener">Open on LeetCode ↗</a>
+                    <button class="btn btn-secondary" onclick="askMentorAboutThis()">✦ Ask AI Interviewer</button>
+                </div>
+
+                <div class="status-banner" id="statusBanner"></div>
+            </div>
+
+            <div class="detail-block">
+                <h3>Your notes</h3>
+                <textarea class="notes-textarea" id="notesArea" placeholder="Jot down your approach, mistakes, or things to remember for next time..."></textarea>
+                <div class="notes-status" id="notesStatus"></div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+    requireAuth();
+    renderUserChip("userChip", "practice");
+
+    const params = new URLSearchParams(window.location.search);
+    const questionId = params.get("id");
+    let currentQuestion = null;
+    let isBookmarked = false;
+    let maxHintRevealed = 0;
+
+    if (!questionId) {
+        window.location.href = "questions.html";
+    }
+
+    const codeEditor = document.getElementById("codeEditor");
+    const draftKey = () => `cm_draft_${questionId}`;
+
+    function difficultyClass(d) {
+        if (!d) return "";
+        const v = d.toLowerCase();
+        if (v.includes("easy")) return "easy";
+        if (v.includes("hard")) return "hard";
+        return "medium";
+    }
+
+    async function loadQuestion() {
+        try {
+            currentQuestion = await apiFetch(`/questions/${questionId}`);
+            document.getElementById("qTitle").textContent = currentQuestion.title;
+            document.getElementById("qTopic").textContent = currentQuestion.topic || "General";
+            const diffEl = document.getElementById("qDifficulty");
+            diffEl.textContent = currentQuestion.difficulty || "N/A";
+            diffEl.className = "tag " + difficultyClass(currentQuestion.difficulty);
+            document.getElementById("qDescription").textContent = currentQuestion.description || "No description available.";
+            document.getElementById("qExamples").textContent = currentQuestion.examples || "No examples provided.";
+
+            if (currentQuestion.constraints) {
+                document.getElementById("qConstraints").textContent = currentQuestion.constraints;
+            } else {
+                document.getElementById("constraintsBlock").style.display = "none";
+            }
+
+            if (currentQuestion.companies) {
+                document.getElementById("companiesBlock").style.display = "block";
+                document.getElementById("qCompanies").innerHTML = currentQuestion.companies
+                    .split(",").map(c => `<span class="tag">${c.trim()}</span>`).join("");
+            }
+
+            const link = document.getElementById("leetcodeLink");
+            if (currentQuestion.link) {
+                link.href = currentQuestion.link;
+            } else {
+                link.style.display = "none";
+            }
+
+            const savedDraft = localStorage.getItem(draftKey());
+            if (savedDraft) codeEditor.value = savedDraft;
+
+            document.getElementById("loadingState").style.display = "none";
+            document.getElementById("questionContent").style.display = "block";
+        } catch (err) {
+            document.getElementById("loadingState").textContent = "Could not load this question: " + err.message;
+        }
+    }
+
+    codeEditor.addEventListener("input", () => {
+        localStorage.setItem(draftKey(), codeEditor.value);
+    });
+
+    async function loadBookmarkStatus() {
+        try {
+            const bookmarks = await apiFetch("/bookmarks");
+            isBookmarked = bookmarks.some(b => String(b.question.id) === String(questionId));
+            document.getElementById("bookmarkBtn").classList.toggle("saved", isBookmarked);
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    async function toggleBookmark() {
+        const btn = document.getElementById("bookmarkBtn");
+        try {
+            if (isBookmarked) {
+                await apiFetch(`/bookmarks/${questionId}`, { method: "DELETE" });
+                isBookmarked = false;
+            } else {
+                await apiFetch("/bookmarks", {
+                    method: "POST",
+                    body: JSON.stringify({ questionId: Number(questionId) })
+                });
+                isBookmarked = true;
+            }
+            btn.classList.toggle("saved", isBookmarked);
+        } catch (err) {
+            alert(err.message);
+        }
+    }
+
+    async function markProgress(solvedCorrectly) {
+        try {
+            await apiFetch("/progress/update", {
+                method: "POST",
+                body: JSON.stringify({
+                    solvedCorrectly,
+                    topic: currentQuestion.topic,
+                    difficulty: currentQuestion.difficulty
+                })
+            });
+            const banner = document.getElementById("statusBanner");
+            banner.className = "status-banner visible " + (solvedCorrectly ? "solved" : "attempted");
+            banner.textContent = solvedCorrectly
+                ? "✓ Nice work — marked as solved, streak and rating updated on your dashboard."
+                : "Noted — this topic will show as a weak spot on your dashboard. Try an AI hint above.";
+        } catch (err) {
+            alert(err.message);
+        }
+    }
+
+    async function revealHint(level) {
+        const btn = document.getElementById("hintBtn" + level);
+        btn.disabled = true;
+        btn.textContent = "Loading...";
+
+        try {
+            const data = await apiFetch("/mentor/hint", {
+                method: "POST",
+                body: JSON.stringify({ questionId: Number(questionId), hintLevel: level })
+            });
+            const container = document.getElementById("hintsContainer");
+            const div = document.createElement("div");
+            div.className = "hint-text";
+            div.innerHTML = `<span class="label">Hint ${level}</span>${data.reply}`;
+            container.appendChild(div);
+
+            btn.textContent = "Hint " + level + " shown";
+            maxHintRevealed = level;
+            if (level < 3) {
+                document.getElementById("hintBtn" + (level + 1)).disabled = false;
+            }
+        } catch (err) {
+            btn.disabled = false;
+            btn.textContent = "Show Hint " + level;
+            alert(err.message);
+        }
+    }
+
+    function askMentorAboutThis() {
+        if (!currentQuestion) return;
+        sessionStorage.setItem("cm_mentor_prefill",
+            `Can you give me a hint for this problem without fully solving it? Title: "${currentQuestion.title}" (${currentQuestion.topic}, ${currentQuestion.difficulty}). Description: ${currentQuestion.description}`
+        );
+        window.location.href = "mentor.html";
+    }
+
+    // ---- Notes ----
+    const notesArea = document.getElementById("notesArea");
+    const notesStatus = document.getElementById("notesStatus");
+    let notesSaveTimeout = null;
+
+    async function loadNotes() {
+        try {
+            const data = await apiFetch(`/notes/${questionId}`);
+            notesArea.value = data.content || "";
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    notesArea.addEventListener("input", () => {
+        notesStatus.textContent = "Saving...";
+        clearTimeout(notesSaveTimeout);
+        notesSaveTimeout = setTimeout(async () => {
+            try {
+                await apiFetch(`/notes/${questionId}`, {
+                    method: "PUT",
+                    body: JSON.stringify({ notes: notesArea.value })
+                });
+                notesStatus.textContent = "Saved ✓";
+                setTimeout(() => { notesStatus.textContent = ""; }, 1500);
+            } catch (err) {
+                notesStatus.textContent = "Could not save notes.";
+            }
+        }, 700);
+    });
+
+    loadQuestion().then(loadBookmarkStatus).then(loadNotes);
+</script>
+
+</body>
+</html>

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Interviewer · CodePilot AI</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="brand"><span class="dot"></span> codepilot-ai</div>
+
+        <nav>
+            <a class="nav-link" data-page="dashboard" href="dashboard.html"><span class="icon">▤</span> Dashboard</a>
+            <a class="nav-link" data-page="practice" href="questions.html"><span class="icon">◆</span> Practice Questions</a>
+            <a class="nav-link" data-page="companies" href="companies.html"><span class="icon">⌘</span> Companies</a>
+            <a class="nav-link" data-page="mentor" href="mentor.html"><span class="icon">✦</span> AI Interviewer</a>
+            <a class="nav-link" data-page="resume" href="resume.html"><span class="icon">▦</span> Resume Analyzer</a>
+            <a class="nav-link" data-page="mock" href="mock-interview.html"><span class="icon">⏱</span> Mock Interview</a>
+            <a class="nav-link" data-page="admin" href="admin.html" id="adminNavLink" style="display:none;"><span class="icon">⚙</span> Admin</a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-chip" id="userChip"></div>
+            <div class="logout-link" onclick="logout()">→ log out</div>
+        </div>
+    </aside>
+
+    <main class="main">
+        <div class="page-header">
+            <div class="eyebrow prompt">mentor --interactive</div>
+            <h1>AI Interviewer</h1>
+            <p>Ask about concepts, get a practice question, or debug your approach.</p>
+        </div>
+
+        <div class="chat-shell">
+            <div class="chat-window-bar">
+                <div class="dots"><span></span><span></span><span></span></div>
+                mentor@codepilot-ai — chat
+            </div>
+            <div class="chat-messages" id="chatMessages">
+                <div class="msg bot">Hi! I'm your CodePilot AI mentor. Ask me to explain a concept, give you a practice question, or help debug your code.</div>
+            </div>
+            <div class="suggestion-row">
+                <div class="suggestion-chip" onclick="sendSuggestion('Explain Binary Search.')">Explain Binary Search</div>
+                <div class="suggestion-chip" onclick="sendSuggestion('Give me a Graph question.')">Give me a Graph question</div>
+                <div class="suggestion-chip" onclick="sendSuggestion('Why is my code wrong?')">Why is my code wrong?</div>
+            </div>
+            <form class="chat-input-row" id="chatForm">
+                <input type="text" id="chatInput" placeholder="Ask your mentor anything..." autocomplete="off" required>
+                <button type="submit" id="sendBtn">Send</button>
+            </form>
+        </div>
+    </main>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+    requireAuth();
+    renderUserChip("userChip", "mentor");
+
+    const messagesEl = document.getElementById("chatMessages");
+    const form = document.getElementById("chatForm");
+    const input = document.getElementById("chatInput");
+    const sendBtn = document.getElementById("sendBtn");
+
+    function appendMessage(text, sender) {
+        const div = document.createElement("div");
+        div.className = "msg " + sender;
+        div.textContent = text;
+        messagesEl.appendChild(div);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    async function sendMessage(message) {
+        appendMessage(message, "user");
+        input.value = "";
+        sendBtn.disabled = true;
+        appendMessage("Thinking...", "bot");
+
+        try {
+            const data = await apiFetch("/mentor/ask", {
+                method: "POST",
+                body: JSON.stringify({ message })
+            });
+            messagesEl.removeChild(messagesEl.lastChild);
+            appendMessage(data.reply, "bot");
+        } catch (err) {
+            messagesEl.removeChild(messagesEl.lastChild);
+            appendMessage("Error: " + err.message, "bot");
+        } finally {
+            sendBtn.disabled = false;
+        }
+    }
+
+    function sendSuggestion(text) {
+        sendMessage(text);
+    }
+
+    form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const message = input.value.trim();
+        if (message) sendMessage(message);
+    });
+
+    // If we arrived here from a question's "Ask AI Mentor for a hint" button,
+    // auto-send that context as the first message.
+    const prefill = sessionStorage.getItem("cm_mentor_prefill");
+    if (prefill) {
+        sessionStorage.removeItem("cm_mentor_prefill");
+        sendMessage(prefill);
+    }
+</script>
+
+</body>
+</html>

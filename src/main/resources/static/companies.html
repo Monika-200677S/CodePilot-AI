@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Companies · CodePilot AI</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="brand"><span class="dot"></span> codepilot-ai</div>
+
+        <nav>
+            <a class="nav-link" data-page="dashboard" href="dashboard.html"><span class="icon">▤</span> Dashboard</a>
+            <a class="nav-link" data-page="practice" href="questions.html"><span class="icon">◆</span> Practice Questions</a>
+            <a class="nav-link" data-page="companies" href="companies.html"><span class="icon">⌘</span> Companies</a>
+            <a class="nav-link" data-page="mentor" href="mentor.html"><span class="icon">✦</span> AI Interviewer</a>
+            <a class="nav-link" data-page="resume" href="resume.html"><span class="icon">▦</span> Resume Analyzer</a>
+            <a class="nav-link" data-page="mock" href="mock-interview.html"><span class="icon">⏱</span> Mock Interview</a>
+            <a class="nav-link" data-page="admin" href="admin.html" id="adminNavLink" style="display:none;"><span class="icon">⚙</span> Admin</a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-chip" id="userChip"></div>
+            <div class="logout-link" onclick="logout()">→ log out</div>
+        </div>
+    </aside>
+
+    <main class="main">
+        <div class="page-header">
+            <div class="eyebrow prompt">questions --by-company</div>
+            <h1>Company-wise Questions</h1>
+            <p>Pick a company to see the questions tagged for it. Tags are topic-based groupings for practice — not a verified "asked at" dataset.</p>
+        </div>
+
+        <div class="company-grid" id="companyGrid">
+            <div class="empty-state">Loading companies...</div>
+        </div>
+
+        <div class="section-title" id="resultsTitle" style="display:none;"></div>
+        <div class="question-list" id="questionList"></div>
+    </main>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+    requireAuth();
+    renderUserChip("userChip", "companies");
+
+    let allQuestions = [];
+
+    function difficultyClass(d) {
+        if (!d) return "";
+        const v = d.toLowerCase();
+        if (v.includes("easy")) return "easy";
+        if (v.includes("hard")) return "hard";
+        return "medium";
+    }
+
+    function renderCompanies() {
+        const counts = {};
+        allQuestions.forEach(q => {
+            (q.companies || "").split(",").map(c => c.trim()).filter(Boolean).forEach(c => {
+                counts[c] = (counts[c] || 0) + 1;
+            });
+        });
+
+        const grid = document.getElementById("companyGrid");
+        const companies = Object.keys(counts).sort();
+
+        if (companies.length === 0) {
+            grid.innerHTML = `<div class="empty-state">No company data yet.</div>`;
+            return;
+        }
+
+        grid.innerHTML = companies.map(c => `
+            <div class="company-card" onclick="showCompany('${c}')">
+                <div class="clogo">${c.charAt(0)}</div>
+                <div style="font-weight:500; margin-bottom:4px;">${c}</div>
+                <div class="ccount">${counts[c]} questions</div>
+            </div>
+        `).join("");
+    }
+
+    function showCompany(company) {
+        const filtered = allQuestions.filter(q => (q.companies || "").includes(company));
+        document.getElementById("resultsTitle").style.display = "block";
+        document.getElementById("resultsTitle").textContent = `${company} — ${filtered.length} questions`;
+
+        document.getElementById("questionList").innerHTML = filtered.map(q => `
+            <div class="question-card" onclick="window.location.href='question.html?id=${q.id}'">
+                <div>
+                    <div class="qtitle">${q.title}</div>
+                    <div class="qmeta">
+                        <span class="tag">${q.topic || "General"}</span>
+                        <span class="tag ${difficultyClass(q.difficulty)}">${q.difficulty || "N/A"}</span>
+                    </div>
+                </div>
+            </div>
+        `).join("");
+
+        document.getElementById("questionList").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    async function loadQuestions() {
+        try {
+            allQuestions = await apiFetch("/questions/all");
+            renderCompanies();
+        } catch (err) {
+            document.getElementById("companyGrid").innerHTML =
+                `<div class="empty-state">Could not load companies: ${err.message}</div>`;
+        }
+    }
+
+    loadQuestions();
+</script>
+
+</body>
+</html>
